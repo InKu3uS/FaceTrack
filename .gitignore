@@ -1,2 +1,3 @@
 .gitignore
+.idea
 /face_recognition_models/
