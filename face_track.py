@@ -1,6 +1,8 @@
+from concurrent.futures import ThreadPoolExecutor
 import cv2
 import face_recognition as fr
 import os
+from queue import Queue
 import numpy as np
 from datetime import datetime
 from tkinter import Tk, Label, Button, Frame, simpledialog, messagebox
@@ -140,7 +142,7 @@ def registar_empleado():
             exito, fotograma = captura.read()
             if exito:
                 # Si se ha realizado con éxito. Guardarla en la carpeta empleados, con su nombre
-                ruta_guardado = f"Empleados\\{nuevo_empleado}.jpg"
+                ruta_guardado = f"{fotos_empleados}\\{nuevo_empleado}.jpg"
                 cv2.imwrite(ruta_guardado, fotograma)
 
                 # Mensaje de confirmación
@@ -187,6 +189,27 @@ def texto_en_pantalla(texto):
     label_camara.config(image=imagen)
     label_camara.image = imagen
 
+# Cola para compartir datos entre diferentes hilos
+queue = Queue()
+
+def reconocimiento_facial(imagen_pequena):
+    """
+    Intenta detectar caras en la imagen recibida.
+    Si se ha detectado una cara, la codifica y la guarda en 'cara_codificada'.
+    Coloca la cara_capturada y la cara_codificada en la cola.
+    Si no se detectan caras, pone en la cola 'None'
+    """
+    cara_capturada = fr.face_locations(imagen_pequena, 1)
+    if cara_capturada:
+        cara_codificada = fr.face_encodings(imagen_pequena, cara_capturada)
+        queue.put((cara_capturada, cara_codificada))
+    else:
+        queue.put(None)
+
+frame_counter = 0
+
+# Crear un ThreadPoolExecutor con un número limitado de hilos (4 en este caso)
+executor = ThreadPoolExecutor(max_workers=4)
 
 # Función para actualizar la cámara en la interfaz
 def actualizar_camara():
@@ -196,7 +219,9 @@ def actualizar_camara():
     Si no está activa, muestra un mensaje en la interfaz
     Se repite cada 10 ms para mantener la actualización en tiempo real
     """
-    global empleados_registrados  # Acceder a la variable global empleados_registrados
+    # Acceder a la variable global empleados_registrados y frame_counter
+    global empleados_registrados
+    global frame_counter
 
     # Solo actualizar si la cámara está activa
     if camara_activa:
@@ -206,58 +231,67 @@ def actualizar_camara():
 
         # Si la captura fue exitosa
         if exito:
-            # Reducir la resolución de la imagen para mejorar el rendimiento
-            fx, fy = 0.25, 0.25  # Factores de escala para reducir la imagen
-            imagen_pequena = cv2.resize(imagen, (0, 0), fx=fx, fy=fy)
 
-            # Detectar caras en la imagen reducida
-            cara_captura = fr.face_locations(imagen_pequena)
+            #Ampliar el contador de fotogramas
+            frame_counter += 1
 
-            # Si se detectaron caras
-            if cara_captura:
+            # Factores de escala para reducir la imagen
+            fx, fy = 0.2, 0.2
 
-                # Codificar las caras detectadas
-                cara_codificada = fr.face_encodings(imagen_pequena, cara_captura)
+            # Crear un hilo para 'reconocimiento_facial' cada 5 fotogramas.
+            if frame_counter % 5 == 0:
 
-                # Comparar cada cara detectada con las caras conocidas
-                for caracodif, caraubic in zip(cara_codificada, cara_captura):
+                # Reducir la resolución de la imagen para mejorar el rendimiento
+                imagen_pequena = cv2.resize(imagen, (0, 0), fx=fx, fy=fy)
 
-                    # Calcular la distancia entre la cara detectada y las caras conocidas
-                    distancias = fr.face_distance(empleados_codificados, caracodif)
+                # Enviar la tarea de reconocimiento facial al ThreadPoolExecutor
+                executor.submit(reconocimiento_facial, imagen_pequena)
 
-                    # Obtener el índice de la cara con la menor distancia (mejor coincidencia)
-                    if len(empleados_codificados) > 0:
-                        indice_coincidencia = np.argmin(distancias)
+            # Sí se detectaron caras en la cola
+            if not queue.empty():
+                # Obtener los datos de la cola
+                resultado = queue.get()
+                if resultado:
+                    cara_captura, cara_codificada = resultado
 
-                        # Si la distancia es mayor a 0.6, considerar la cara como desconocida
-                        if distancias[indice_coincidencia] > 0.6:
-                            nombre = "Desconocido"
-                            # Rojo para caras desconocidas
-                            color = (0, 0, 255)
-                        else:
-                            # Obtener el nombre del empleado correspondiente a la cara detectada
-                            nombre = nombres_empleados[indice_coincidencia]
-                            # Verde para caras conocidas
-                            color = (0, 255, 0)
+                    # Comparar cada cara detectada con las caras conocidas
+                    for caracodif, caraubic in zip(cara_codificada, cara_captura):
 
-                            # Registrar el ingreso si el empleado no ha sido registrado en esta sesión
-                            if nombre != "Desconocido" and nombre not in empleados_registrados:
-                                registrar_ingresos(nombre)
-                                empleados_registrados.add(nombre)
+                        # Calcular la distancia entre la cara detectada y las caras conocidas
+                        distancias = fr.face_distance(empleados_codificados, caracodif)
 
+                        # Obtener el índice de la cara con la menor distancia (mejor coincidencia)
+                        if len(empleados_codificados) > 0:
+                            indice_coincidencia = np.argmin(distancias)
 
-                        # Ajustar las coordenadas de la cara a la resolución original
-                        y1, x2, y2, x1 = caraubic
-                        y1, y2, x1, x2 = int(y1 / fy), int(y2 / fy), int(x1 / fx), int(x2 / fx)
+                            # Si la distancia es mayor a 0.6, considerar la cara como desconocida
+                            if distancias[indice_coincidencia] > 0.6:
+                                nombre = "Desconocido"
+                                # Rojo para caras desconocidas
+                                color = (0, 0, 255)
+                            else:
+                                # Obtener el nombre del empleado correspondiente a la cara detectada
+                                nombre = nombres_empleados[indice_coincidencia]
+                                # Verde para caras conocidas
+                                color = (0, 255, 0)
 
-                        # Dibujar un rectángulo alrededor de la cara detectada
-                        cv2.rectangle(imagen, (x1, y1), (x2, y2), color, 2)
+                                # Registrar el ingreso si el empleado no ha sido registrado en esta sesión
+                                if nombre != "Desconocido" and nombre not in empleados_registrados:
+                                    registrar_ingresos(nombre)
+                                    empleados_registrados.add(nombre)
 
-                        # Dibujar un rectángulo relleno para el nombre
-                        cv2.rectangle(imagen, (x1, y2 - 35), (x2, y2), color, cv2.FILLED)
+                            # Ajustar las coordenadas de la cara a la resolución original
+                            y1, x2, y2, x1 = caraubic
+                            y1, y2, x1, x2 = int(y1 / fy), int(y2 / fy), int(x1 / fx), int(x2 / fx)
 
-                        # Mostrar el nombre del empleado o "Desconocido" debajo del rectángulo
-                        cv2.putText(imagen, nombre, (x1 + 6, y2 - 6), cv2.FONT_HERSHEY_COMPLEX, 0.75, (255, 255, 255), 2)
+                            # Dibujar un rectángulo alrededor de la cara detectada
+                            cv2.rectangle(imagen, (x1, y1), (x2, y2), color, 2)
+
+                            # Dibujar un rectángulo relleno para el nombre
+                            cv2.rectangle(imagen, (x1, y2 - 35), (x2, y2), color, cv2.FILLED)
+
+                            # Mostrar el nombre del empleado o "Desconocido" debajo del rectángulo
+                            cv2.putText(imagen, nombre, (x1 + 6, y2 - 6), cv2.FONT_HERSHEY_COMPLEX, 0.75, (255, 255, 255), 2)
 
                 # Convertir la imagen de BGR (OpenCV) a RGB (PIL)
                 imagen = cv2.cvtColor(imagen, cv2.COLOR_BGR2RGB)
@@ -274,7 +308,7 @@ def actualizar_camara():
                 label_camara.image = imagen
 
         # Llamar a la función cada 10 ms para actualizar la cámara en tiempo real
-        label_camara.after(10, actualizar_camara)
+        label_camara.after(50, actualizar_camara)
 
     else:
         texto_en_pantalla("Reconocimiento facial desactivado")
