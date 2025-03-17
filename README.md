@@ -1,9 +1,9 @@
-<h1 style="text-align:center">FaceTrack</h1>
+<h1 align="center">FaceTrack</h1>
 
 <div align="center">
 <img src="logo/faceTrack-logo.png" alt="Logo" style="width:30%">
 </div>
-<h2 style="text-align:center">Control de asistencia mediante reconocimiento facial</h2>
+<h2 align="center">Control de asistencia mediante reconocimiento facial</h2>
 
 FaceTrack permite llevar un control de asistencía de los empleados de una empresa de manera
 automatizada usando reconocimiento facial. Registrando en un archivo el nombre y hora de 
