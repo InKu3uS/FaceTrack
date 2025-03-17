@@ -1,11 +1,9 @@
-import tkinter
-
 import cv2
 import face_recognition as fr
 import os
 import numpy as np
 from datetime import datetime
-from tkinter import Tk, Label, Button, Frame
+from tkinter import Tk, Label, Button, Frame, simpledialog, messagebox
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 
 #Variables necesarias
@@ -45,6 +43,19 @@ for nombre in lista_empleados:
     imagen_actual = cv2.imread(f'{fotos_empleados}\\{nombre}')
     mis_imagenes.append(imagen_actual)
     nombres_empleados.append(os.path.splitext(nombre)[0])
+
+def centrar_ventana(ventana_centrar, ancho_ventana, alto_ventana):
+    """
+    Centra la ventana recibida como parametro al ancho y alto indicado
+    en los otros parametros.
+    """
+    ancho_pantalla = ventana.winfo_screenwidth()
+    alto_pantalla = ventana.winfo_screenheight()
+
+    x = (ancho_pantalla // 2) - (ancho_ventana // 2)
+    y = (alto_pantalla // 2) - (alto_ventana // 2)
+
+    ventana_centrar.geometry(f"{ancho_ventana}x{alto_ventana}+{x}+{y}")
 
 
 # Liberar recursos al cerrar la ventana
@@ -102,7 +113,48 @@ def foto_registro(persona, hora):
         hora = hora.replace(":", "-")
         ruta_guardado = f"{fotos_registro}\\{persona}_{hora}.jpg"
         cv2.imwrite(ruta_guardado, fotograma)
-        print(f"Foto de {persona} guardada con éxito")
+
+def registar_empleado():
+    """
+    Registra la foto de un nuevo empleado.
+    Solicita el nombre del empleado a registrar, si está vacío da un error.
+    Si se ha insertado un nombre, se saca una foto y se guarda en la carpeta 'Empleados' con el nombre
+    que se ha insertado en el paso previo.
+    """
+    global lista_empleados
+    global camara_activa
+    global empleados_codificados
+    # Si la cámara no está activa, mostrar un mensaje
+    if not camara_activa:
+        messagebox.showinfo("Información", "La cámara debe estar activa")
+        return
+    else:
+        # Solicitar el nombre del nuevo empleado
+        nuevo_empleado = simpledialog.askstring("Ingresa el nombre", "Ingresa el nombre y el primer apellido del empleado")
+
+        if not nuevo_empleado:
+            # Si el nombre está vacío, mostrar advertencia
+            messagebox.showwarning("Advertencia", "El nombre del empleado no puede estar vacío")
+        else:
+            #Realizar la captura
+            exito, fotograma = captura.read()
+            if exito:
+                # Si se ha realizado con éxito. Guardarla en la carpeta empleados, con su nombre
+                ruta_guardado = f"Empleados\\{nuevo_empleado}.jpg"
+                cv2.imwrite(ruta_guardado, fotograma)
+
+                # Mensaje de confirmación
+                messagebox.showinfo("Empleado registrado", f"El empleado {nuevo_empleado} se ha registrado con éxito")
+
+                #Actualizar la lista de empleados
+                lista_empleados = os.listdir(fotos_empleados)
+
+                #Cargar la nueva imagen y actualizar las listas
+                empleado_registrado = cv2.imread(ruta_guardado)
+                mis_imagenes.append(empleado_registrado)
+                nombres_empleados.append(nuevo_empleado)
+                empleados_codificados = codificar(mis_imagenes)
+
 
 def texto_en_pantalla(texto):
     """
@@ -174,51 +226,52 @@ def actualizar_camara():
                     distancias = fr.face_distance(empleados_codificados, caracodif)
 
                     # Obtener el índice de la cara con la menor distancia (mejor coincidencia)
-                    indice_coincidencia = np.argmin(distancias)
+                    if len(empleados_codificados) > 0:
+                        indice_coincidencia = np.argmin(distancias)
 
-                    # Si la distancia es mayor a 0.6, considerar la cara como desconocida
-                    if distancias[indice_coincidencia] > 0.6:
-                        nombre = "Desconocido"
-                        # Rojo para caras desconocidas
-                        color = (0, 0, 255)
-                    else:
-                        # Obtener el nombre del empleado correspondiente a la cara detectada
-                        nombre = nombres_empleados[indice_coincidencia]
-                        # Verde para caras conocidas
-                        color = (0, 255, 0)
+                        # Si la distancia es mayor a 0.6, considerar la cara como desconocida
+                        if distancias[indice_coincidencia] > 0.6:
+                            nombre = "Desconocido"
+                            # Rojo para caras desconocidas
+                            color = (0, 0, 255)
+                        else:
+                            # Obtener el nombre del empleado correspondiente a la cara detectada
+                            nombre = nombres_empleados[indice_coincidencia]
+                            # Verde para caras conocidas
+                            color = (0, 255, 0)
 
-                        # Registrar el ingreso si el empleado no ha sido registrado en esta sesión
-                        if nombre != "Desconocido" and nombre not in empleados_registrados:
-                            registrar_ingresos(nombre)
-                            empleados_registrados.add(nombre)
+                            # Registrar el ingreso si el empleado no ha sido registrado en esta sesión
+                            if nombre != "Desconocido" and nombre not in empleados_registrados:
+                                registrar_ingresos(nombre)
+                                empleados_registrados.add(nombre)
 
 
-                    # Ajustar las coordenadas de la cara a la resolución original
-                    y1, x2, y2, x1 = caraubic
-                    y1, y2, x1, x2 = int(y1 / fy), int(y2 / fy), int(x1 / fx), int(x2 / fx)
+                        # Ajustar las coordenadas de la cara a la resolución original
+                        y1, x2, y2, x1 = caraubic
+                        y1, y2, x1, x2 = int(y1 / fy), int(y2 / fy), int(x1 / fx), int(x2 / fx)
 
-                    # Dibujar un rectángulo alrededor de la cara detectada
-                    cv2.rectangle(imagen, (x1, y1), (x2, y2), color, 2)
+                        # Dibujar un rectángulo alrededor de la cara detectada
+                        cv2.rectangle(imagen, (x1, y1), (x2, y2), color, 2)
 
-                    # Dibujar un rectángulo relleno para el nombre
-                    cv2.rectangle(imagen, (x1, y2 - 35), (x2, y2), color, cv2.FILLED)
+                        # Dibujar un rectángulo relleno para el nombre
+                        cv2.rectangle(imagen, (x1, y2 - 35), (x2, y2), color, cv2.FILLED)
 
-                    # Mostrar el nombre del empleado o "Desconocido" debajo del rectángulo
-                    cv2.putText(imagen, nombre, (x1 + 6, y2 - 6), cv2.FONT_HERSHEY_COMPLEX, 0.75, (255, 255, 255), 2)
+                        # Mostrar el nombre del empleado o "Desconocido" debajo del rectángulo
+                        cv2.putText(imagen, nombre, (x1 + 6, y2 - 6), cv2.FONT_HERSHEY_COMPLEX, 0.75, (255, 255, 255), 2)
 
-            # Convertir la imagen de BGR (OpenCV) a RGB (PIL)
-            imagen = cv2.cvtColor(imagen, cv2.COLOR_BGR2RGB)
+                # Convertir la imagen de BGR (OpenCV) a RGB (PIL)
+                imagen = cv2.cvtColor(imagen, cv2.COLOR_BGR2RGB)
 
-            # Convertir la imagen a un formato compatible con Tkinter
-            imagen = Image.fromarray(imagen)
-            imagen = ImageTk.PhotoImage(imagen)
+                # Convertir la imagen a un formato compatible con Tkinter
+                imagen = Image.fromarray(imagen)
+                imagen = ImageTk.PhotoImage(imagen)
 
-            #Redimensionar la ventana para que quepa la imagen completa y los botones
-            ventana.geometry(f"{imagen.width()}x{(imagen.height() + 50)}")
+                #Redimensionar la ventana para que quepa la imagen completa y los botones
+                ventana.geometry(f"{imagen.width()}x{(imagen.height() + 50)}")
 
-            # Mostrar la imagen en el Label de la interfaz
-            label_camara.config(image=imagen)
-            label_camara.image = imagen
+                # Mostrar la imagen en el Label de la interfaz
+                label_camara.config(image=imagen)
+                label_camara.image = imagen
 
         # Llamar a la función cada 10 ms para actualizar la cámara en tiempo real
         label_camara.after(10, actualizar_camara)
@@ -248,9 +301,19 @@ empleados_codificados = codificar(mis_imagenes)
 
 # Crear la ventana principal
 ventana = Tk()
+
+# Título de la ventana
 ventana.title("FaceTrack")
+
+# Centrar ventana
+centrar_ventana(ventana, 640, 480)
+
+# Resolución de la ventana
 ventana.geometry("640x480")
+
+# Icono
 ventana.iconbitmap("icon.ico")
+
 
 # Área para mostrar la cámara
 label_camara = Label(ventana)
@@ -270,13 +333,18 @@ frame_botones.pack(side="bottom", anchor="center", pady=10)
 
 # Botón para iniciar/detener la cámara.
 # Se muestra si hay fotos de empleados
-if len(lista_empleados) > 0:
-    boton_camara = Button(frame_botones, text="Iniciar Cámara", command=toggle_camara)
-    boton_camara.pack(side="left", padx=25)
+#if len(lista_empleados) > 0:
+boton_camara = Button(frame_botones, text="Iniciar Cámara", command=toggle_camara)
+boton_camara.pack(side="left", padx=25)
+
+#Boton para sacar foto a un nuevo empleado y registrarlo
+boton_registro = Button(frame_botones, text="Registrar Empleado", command=registar_empleado)
+boton_registro.pack(side="left", padx=25)
+
 
 # Botón para salir de la aplicación
 boton_salir = Button(frame_botones, text="Salir", command=on_closing)
-boton_salir.pack(side="left")
+boton_salir.pack(side="left", padx=25)
 
 # Inicializar la cámara
 captura = cv2.VideoCapture(0, cv2.CAP_DSHOW)
